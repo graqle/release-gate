@@ -1,9 +1,10 @@
 name: Action self-test
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  # Self-test is disabled until graqle SDK v0.52.0 (which ships
+  # `graq release-gate` CLI subcommand) is published to PyPI.
+  # Tracked in SDK MASTER-TRACKER.md — STEP-B.
+  workflow_dispatch:
 
 jobs:
   # Minimal smoke test: invoke the Action against our own repo.
