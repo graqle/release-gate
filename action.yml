@@ -1,0 +1,91 @@
+name: 'GraQle Release Gate'
+description: 'Run a governance check before a PyPI or VS Code Marketplace release. Blocks on BLOCKER findings, warns on MAJOR.'
+author: 'GraQle'
+branding:
+  icon: 'shield'
+  color: 'purple'
+
+inputs:
+  target:
+    description: 'Release target: "pypi" or "vscode-marketplace".'
+    required: true
+  strict:
+    description: 'If "true", BLOCKER findings fail the job. If "false", only log. Default "true".'
+    required: false
+    default: 'true'
+  confidence_threshold:
+    description: 'Minimum confidence (0.0-1.0) required for the gate to pass. Default 0.65.'
+    required: false
+    default: '0.65'
+  gate_threshold:
+    description: 'Minimum gate score (0.0-1.0) required. Default 0.60.'
+    required: false
+    default: '0.60'
+  graqle_version:
+    description: 'Pin a specific graqle version (e.g. "0.52.0"). Default: latest from PyPI.'
+    required: false
+    default: ''
+  python_version:
+    description: 'Python version for the gate runner. Default 3.11.'
+    required: false
+    default: '3.11'
+
+outputs:
+  verdict:
+    description: 'Gate verdict: CLEAR, WARN, FLAG, or INSUFFICIENT_GRAPH.'
+    value: ${{ steps.run_gate.outputs.verdict }}
+  confidence:
+    description: 'Confidence score 0.0-1.0.'
+    value: ${{ steps.run_gate.outputs.confidence }}
+  report_path:
+    description: 'Path to the JSON report artifact.'
+    value: ${{ steps.run_gate.outputs.report_path }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python_version }}
+
+    - name: Install graqle
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.graqle_version }}" ]; then
+          pip install "graqle==${{ inputs.graqle_version }}"
+        else
+          pip install graqle
+        fi
+        graq --version
+
+    - name: Run release gate
+      id: run_gate
+      shell: bash
+      run: |
+        graq release-gate \
+          --target "${{ inputs.target }}" \
+          --strict "${{ inputs.strict }}" \
+          --confidence-threshold "${{ inputs.confidence_threshold }}" \
+          --gate-threshold "${{ inputs.gate_threshold }}" \
+          --output release-gate-report.json
+
+        VERDICT=$(python -c "import json; print(json.load(open('release-gate-report.json')).get('verdict', 'UNKNOWN'))")
+        CONFIDENCE=$(python -c "import json; print(json.load(open('release-gate-report.json')).get('confidence', 0.0))")
+
+        echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
+        echo "confidence=$CONFIDENCE" >> "$GITHUB_OUTPUT"
+        echo "report_path=release-gate-report.json" >> "$GITHUB_OUTPUT"
+
+        echo "## GraQle Release Gate" >> "$GITHUB_STEP_SUMMARY"
+        echo "- **Target:** ${{ inputs.target }}" >> "$GITHUB_STEP_SUMMARY"
+        echo "- **Verdict:** $VERDICT" >> "$GITHUB_STEP_SUMMARY"
+        echo "- **Confidence:** $CONFIDENCE" >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Upload report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: release-gate-report
+        path: release-gate-report.json
+        if-no-files-found: warn

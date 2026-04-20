@@ -1,0 +1,29 @@
+name: Action self-test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # Minimal smoke test: invoke the Action against our own repo.
+  # The gate won't find anything meaningful here (no pyproject.toml, no CHANGELOG),
+  # but it should still install graqle, run without crashing, and emit a verdict.
+  self-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: gate
+        uses: ./
+        with:
+          target: pypi
+          strict: 'false'  # don't fail the Action's own CI on verdict
+
+      - name: Report verdict
+        run: |
+          echo "Verdict: ${{ steps.gate.outputs.verdict }}"
+          echo "Confidence: ${{ steps.gate.outputs.confidence }}"
+          echo "Report: ${{ steps.gate.outputs.report_path }}"
