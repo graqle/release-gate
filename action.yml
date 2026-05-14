@@ -63,16 +63,34 @@ runs:
       id: run_gate
       shell: bash
       run: |
-        # CLI option renamed in graqle 0.54.3: --confidence-threshold → --min-confidence.
-        # The composite-action input name `confidence_threshold` is kept stable
-        # for back-compat with existing consumers of this action.
+        # CLI surface in graqle 0.54.3+:
+        #   - --confidence-threshold → --min-confidence (rename)
+        #   - --gate-threshold → REMOVED (no replacement; verdict thresholds
+        #     now baked into graqle internals)
+        #   - --output → REMOVED; use --json to stdout instead
+        #   - --strict became a boolean flag (no longer "true"/"false" value)
+        #
+        # Action input names kept stable (confidence_threshold, gate_threshold,
+        # strict) for back-compat with existing consumers. The gate_threshold
+        # input is now silently ignored; logging this for transparency.
+
+        if [ "${{ inputs.gate_threshold }}" != "0.60" ]; then
+          echo "::warning::gate_threshold input was set to ${{ inputs.gate_threshold }} but the graq CLI no longer accepts it (removed in 0.54.3). Ignoring."
+        fi
+
+        STRICT_FLAG=""
+        if [ "${{ inputs.strict }}" = "true" ]; then
+          STRICT_FLAG="--strict"
+        fi
+
         graq release-gate \
           --target "${{ inputs.target }}" \
-          --strict "${{ inputs.strict }}" \
+          $STRICT_FLAG \
           --min-confidence "${{ inputs.confidence_threshold }}" \
-          --gate-threshold "${{ inputs.gate_threshold }}" \
-          --output release-gate-report.json
+          --json > release-gate-report.json
+        GATE_EXIT=$?
 
+        # Parse verdict + confidence from the JSON-on-stdout report
         VERDICT=$(python -c "import json; print(json.load(open('release-gate-report.json')).get('verdict', 'UNKNOWN'))")
         CONFIDENCE=$(python -c "import json; print(json.load(open('release-gate-report.json')).get('confidence', 0.0))")
 
@@ -84,6 +102,9 @@ runs:
         echo "- **Target:** ${{ inputs.target }}" >> "$GITHUB_STEP_SUMMARY"
         echo "- **Verdict:** $VERDICT" >> "$GITHUB_STEP_SUMMARY"
         echo "- **Confidence:** $CONFIDENCE" >> "$GITHUB_STEP_SUMMARY"
+
+        # Propagate the CLI's exit code so --strict failures still fail the job
+        exit $GATE_EXIT
 
     - name: Upload report
       if: always()
