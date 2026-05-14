@@ -63,10 +63,13 @@ runs:
       id: run_gate
       shell: bash
       run: |
+        # CLI option renamed in graqle 0.54.3: --confidence-threshold → --min-confidence.
+        # The composite-action input name `confidence_threshold` is kept stable
+        # for back-compat with existing consumers of this action.
         graq release-gate \
           --target "${{ inputs.target }}" \
           --strict "${{ inputs.strict }}" \
-          --confidence-threshold "${{ inputs.confidence_threshold }}" \
+          --min-confidence "${{ inputs.confidence_threshold }}" \
           --gate-threshold "${{ inputs.gate_threshold }}" \
           --output release-gate-report.json
 
