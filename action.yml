@@ -83,10 +83,27 @@ runs:
           STRICT_FLAG="--strict"
         fi
 
+        # graqle 0.54.3+ requires --diff <path>. Build the right diff for the
+        # current GitHub event:
+        #   - pull_request → diff against the base ref (PR delta)
+        #   - release / push to master → diff of the latest commit
+        #   - workflow_dispatch / other → diff of the latest commit (best effort)
+        # The diff is written to /tmp/release-gate.diff and piped via --diff.
+        DIFF_FILE="/tmp/release-gate.diff"
+        if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+          BASE_SHA="${GITHUB_BASE_REF:-master}"
+          git fetch origin "${BASE_SHA}" --depth=1 || true
+          git diff "origin/${BASE_SHA}...HEAD" > "${DIFF_FILE}"
+        else
+          git diff HEAD~1 HEAD > "${DIFF_FILE}" || git diff HEAD > "${DIFF_FILE}"
+        fi
+        echo "::notice::Release Gate scanning diff ($(wc -l < ${DIFF_FILE}) lines) for event=${GITHUB_EVENT_NAME}"
+
         graq release-gate \
           --target "${{ inputs.target }}" \
           $STRICT_FLAG \
           --min-confidence "${{ inputs.confidence_threshold }}" \
+          --diff "${DIFF_FILE}" \
           --json > release-gate-report.json
         GATE_EXIT=$?
 
